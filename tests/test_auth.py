@@ -1,63 +1,163 @@
+"""Integration tests for /api/v1/auth endpoints."""
 import pytest
-import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-
-from app.main import app
 
 BASE = "/api/v1/auth"
 
 
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
+# ── Register ──────────────────────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_register_success(http_client):
+    import uuid
+    suffix = uuid.uuid4().hex[:8]
+    r = await http_client.post(f"{BASE}/register", json={
+        "email": f"new_{suffix}@example.com",
+        "password": "secret123",
+        "name": "Новый",
+    })
+    assert r.status_code == 201
+    data = r.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
+    assert data["token_type"] == "bearer"
 
 
 @pytest.mark.anyio
-async def test_register_and_login():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        payload = {"email": "test_auth@example.com", "password": "secret123", "name": "Тест"}
-
-        # register
-        r = await client.post(f"{BASE}/register", json=payload)
-        assert r.status_code == 201, r.text
-        data = r.json()
-        assert "access_token" in data
-        assert "refresh_token" in data
-        assert data["token_type"] == "bearer"
-
-        # duplicate register → 409
-        r2 = await client.post(f"{BASE}/register", json=payload)
-        assert r2.status_code == 409
-
-        # login
-        r3 = await client.post(f"{BASE}/login", json={"email": payload["email"], "password": payload["password"]})
-        assert r3.status_code == 200
-        tokens = r3.json()
-
-        # refresh
-        r4 = await client.post(f"{BASE}/refresh", json={"refresh_token": tokens["refresh_token"]})
-        assert r4.status_code == 200
-
-        # logout
-        r5 = await client.post(f"{BASE}/logout", json={"refresh_token": tokens["refresh_token"]})
-        assert r5.status_code == 204
+async def test_register_duplicate_email(http_client, registered_user):
+    r = await http_client.post(f"{BASE}/register", json={
+        "email": registered_user["email"],
+        "password": "another123",
+        "name": "Другой",
+    })
+    assert r.status_code == 409
 
 
 @pytest.mark.anyio
-async def test_login_wrong_password():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        r = await client.post(
-            f"{BASE}/login",
-            json={"email": "nobody@example.com", "password": "wrong"},
-        )
-        assert r.status_code == 401
+async def test_register_missing_password(http_client):
+    import uuid
+    r = await http_client.post(f"{BASE}/register", json={
+        "email": f"nopw_{uuid.uuid4().hex[:6]}@x.com",
+        "name": "X",
+    })
+    assert r.status_code == 422
 
 
 @pytest.mark.anyio
-async def test_protected_without_token():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        r = await client.get("/api/v1/users/me")
-        assert r.status_code == 403  # HTTPBearer returns 403 when no credentials
+async def test_register_invalid_email(http_client):
+    r = await http_client.post(f"{BASE}/register", json={
+        "email": "not-an-email",
+        "password": "pass123",
+        "name": "X",
+    })
+    assert r.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_register_missing_name(http_client):
+    import uuid
+    r = await http_client.post(f"{BASE}/register", json={
+        "email": f"noname_{uuid.uuid4().hex[:6]}@x.com",
+        "password": "pass123",
+    })
+    assert r.status_code == 422
+
+
+# ── Login ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_login_success(http_client, registered_user):
+    r = await http_client.post(f"{BASE}/login", json={
+        "email": registered_user["email"],
+        "password": registered_user["password"],
+    })
+    assert r.status_code == 200
+    data = r.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
+
+
+@pytest.mark.anyio
+async def test_login_wrong_password(http_client, registered_user):
+    r = await http_client.post(f"{BASE}/login", json={
+        "email": registered_user["email"],
+        "password": "wrongpassword",
+    })
+    assert r.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_login_nonexistent_user(http_client):
+    r = await http_client.post(f"{BASE}/login", json={
+        "email": "nobody@example.com",
+        "password": "anypassword",
+    })
+    assert r.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_login_missing_fields(http_client):
+    r = await http_client.post(f"{BASE}/login", json={"email": "only@email.com"})
+    assert r.status_code == 422
+
+
+# ── Refresh ───────────────────────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_refresh_success(http_client, registered_user):
+    r = await http_client.post(f"{BASE}/refresh", json={
+        "refresh_token": registered_user["refresh_token"],
+    })
+    assert r.status_code == 200
+    assert "access_token" in r.json()
+    assert "refresh_token" in r.json()
+
+
+@pytest.mark.anyio
+async def test_refresh_invalid_token(http_client):
+    r = await http_client.post(f"{BASE}/refresh", json={"refresh_token": "garbage"})
+    assert r.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_refresh_after_logout(http_client, registered_user):
+    """Refresh token must be revoked after logout."""
+    await http_client.post(f"{BASE}/logout", json={
+        "refresh_token": registered_user["refresh_token"],
+    })
+    r = await http_client.post(f"{BASE}/refresh", json={
+        "refresh_token": registered_user["refresh_token"],
+    })
+    assert r.status_code == 401
+
+
+# ── Logout ────────────────────────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_logout_success(http_client, registered_user):
+    r = await http_client.post(f"{BASE}/logout", json={
+        "refresh_token": registered_user["refresh_token"],
+    })
+    assert r.status_code == 204
+
+
+# ── Protected route guards ────────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_protected_without_token(http_client):
+    r = await http_client.get("/api/v1/users/me")
+    assert r.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_protected_with_invalid_token(http_client):
+    r = await http_client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": "Bearer invalid.token.here"},
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_protected_with_valid_token(http_client, auth_headers):
+    r = await http_client.get("/api/v1/users/me", headers=auth_headers)
+    assert r.status_code == 200

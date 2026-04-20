@@ -9,4 +9,4 @@ COPY . .
 
 RUN chmod +x entrypoint.sh
 
-CMD ["./entrypoint.sh"]
+CMD ["/bin/sh", "entrypoint.sh"]

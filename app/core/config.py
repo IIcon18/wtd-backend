@@ -4,10 +4,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql+asyncpg://wtd_user:wtd_pass@db:5432/wtd_db"
+    DATABASE_URL: str
     REDIS_URL: str = "redis://redis:6379"
 
-    SECRET_KEY: str = "your-secret-key-here-min-32-chars-change-me"
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     PAYMENT_TG: str = ""
 
     ADMIN_EMAIL: str = "admin@wavestodream.ru"
-    ADMIN_PASSWORD: str = "changeme123"
+    ADMIN_PASSWORD: str
 
     CORS_ORIGINS: str = "http://localhost:5173,https://wavestodream.ru"
 

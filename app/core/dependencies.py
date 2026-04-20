@@ -64,14 +64,17 @@ async def check_chat_access(
     if subscription.tier.value == "pro":
         return current_user
 
-    # base: 3 requests per day
-    today = date.today()
-    if subscription.last_request_date != today:
-        subscription.ai_requests_today = 0
-        subscription.last_request_date = today
-        await db.commit()
+    # base: 3 requests per day — atomic Redis counter prevents race conditions
+    today = date.today().isoformat()
+    key = f"ai_limit:{current_user.id}:{today}"
+    redis = await get_redis()
 
-    if subscription.ai_requests_today >= 3:
+    count = await redis.incr(key)
+    if count == 1:
+        await redis.expire(key, 90000)  # ~25 h — covers the full day with margin
+
+    if count > 3:
+        await redis.decr(key)
         raise ForbiddenError("Превышен лимит запросов на сегодня (3/3)")
 
     return current_user

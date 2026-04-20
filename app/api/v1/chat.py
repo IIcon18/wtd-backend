@@ -8,8 +8,8 @@ from app.core.database import get_db
 from app.core.dependencies import check_chat_access, get_current_user
 from app.core.exceptions import BadRequestError
 from app.models.user import User
+from app.models.user_session import UserSession
 from app.repositories.session_repo import SessionRepository
-from app.repositories.subscription_repo import SubscriptionRepository
 from app.repositories.swim_profile_repo import SwimProfileRepository
 from app.repositories.workout_repo import WorkoutRepository
 from app.schemas.chat import ChatHistoryItem, ChatMessage, ChatResponse
@@ -28,7 +28,6 @@ async def send_message(
     profile_repo = SwimProfileRepository(db)
     session_repo = SessionRepository(db)
     workout_repo = WorkoutRepository(db)
-    sub_repo = SubscriptionRepository(db)
 
     profile = await profile_repo.get_by_user_id(current_user.id)
     if not profile:
@@ -51,23 +50,24 @@ async def send_message(
         templates=templates,
     )
 
-    # save session
+    # Stage access consumption and session creation in one transaction
+    # so neither can succeed without the other.
     tpl = templates[0] if templates else None
-    session = await session_repo.create(
+
+    if profile.single_workout_available:
+        profile.single_workout_available = False
+
+    session = UserSession(
         user_id=current_user.id,
         workout_type=tpl.type if tpl else "endurance",
         duration_min=tpl.duration_min if tpl else 45,
         distance_m=tpl.content.get("total_distance", 1000) if tpl else 1000,
         content=reply,
     )
+    db.add(session)
 
-    # consume access
-    if profile.single_workout_available:
-        await profile_repo.update(profile, single_workout_available=False)
-    else:
-        subscription = await sub_repo.get_active_subscription(current_user.id)
-        if subscription and subscription.tier.value == "base":
-            await sub_repo.increment_ai_requests(subscription)
+    await db.commit()
+    await db.refresh(session)
 
     return ChatResponse(reply=reply, session_id=session.id)
 

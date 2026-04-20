@@ -3,17 +3,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_admin
 from app.core.exceptions import NotFoundError
 from app.models.payment import PaymentStatus, PaymentTier
-from app.models.subscription import SubscriptionTier
+from app.models.subscription import Subscription, SubscriptionTier
 from app.models.user import User
 from app.repositories.payment_repo import PaymentRepository
 from app.repositories.session_repo import SessionRepository
-from app.repositories.subscription_repo import SubscriptionRepository
 from app.repositories.swim_profile_repo import SwimProfileRepository
 from app.repositories.user_repo import UserRepository
 from app.schemas.payment import PaymentOut
@@ -37,31 +37,45 @@ async def approve_payment(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    payment_repo = PaymentRepository(db)
-    payment = await payment_repo.get_by_id(payment_id)
+    payment = await PaymentRepository(db).get_by_id(payment_id)
     if not payment:
         raise NotFoundError("Платёж не найден")
 
-    payment = await payment_repo.update_status(
-        payment, PaymentStatus.approved, processed_by=admin.id
-    )
+    # Stage all side-effects before the single commit so they're atomic.
+    payment.status = PaymentStatus.approved
+    payment.processed_by = admin.id
+    payment.updated_at = datetime.now(timezone.utc)
 
     if payment.tier == PaymentTier.single:
-        profile_repo = SwimProfileRepository(db)
-        profile = await profile_repo.get_by_user_id(payment.user_id)
+        profile = await SwimProfileRepository(db).get_by_user_id(payment.user_id)
         if profile:
-            await profile_repo.update(profile, single_workout_available=True)
+            profile.single_workout_available = True
             logger.info("Granted single workout to user_id=%s", payment.user_id)
     else:
         tier = SubscriptionTier(payment.tier.value)
         now = datetime.now(timezone.utc)
-        await SubscriptionRepository(db).create_or_update(
+
+        # Deactivate existing active subscriptions
+        result = await db.execute(
+            select(Subscription).where(
+                Subscription.user_id == payment.user_id,
+                Subscription.is_active == True,
+            )
+        )
+        for sub in result.scalars().all():
+            sub.is_active = False
+
+        db.add(Subscription(
             user_id=payment.user_id,
             tier=tier,
             started_at=now,
             expires_at=now + timedelta(days=30),
-        )
+            is_active=True,
+        ))
 
+    await db.commit()
+    await db.refresh(payment)
+    logger.info("Payment id=%s approved by admin_id=%s", payment.id, admin.id)
     return payment
 
 

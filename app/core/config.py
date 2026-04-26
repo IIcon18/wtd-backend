@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     AI_API_KEY: str = ""
     AI_MODEL: str = ""
 
+    # GigaChat (Sberbank) — приоритет над AI_API_URL
+    GIGACHAT_CREDENTIALS: str = ""  # base64(client_id:client_secret) из личного кабинета
+    GIGACHAT_SCOPE: str = "GIGACHAT_API_PERS"  # GIGACHAT_API_PERS или GIGACHAT_API_CORP
+    GIGACHAT_MODEL: str = "GigaChat"
+
     PAYMENT_PHONE: str = ""
     PAYMENT_TG: str = ""
 

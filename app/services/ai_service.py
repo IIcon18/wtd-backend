@@ -1,5 +1,8 @@
 import logging
-from typing import List
+import time
+import uuid
+from dataclasses import dataclass
+from typing import List, Optional
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +13,9 @@ from app.models.user_session import UserSession
 from app.models.workout import Workout
 
 logger = logging.getLogger(__name__)
+
+_GIGACHAT_AUTH_URL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+_GIGACHAT_CHAT_URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
 
 _SYSTEM_PROMPT = """
 Ты персональный тренер по плаванию. Отвечай по-русски.
@@ -27,6 +33,15 @@ _SYSTEM_PROMPT = """
 - Формат: разминка / основная часть / заминка / совет тренера
 - Если вопрос не про тренировку — отвечай как тренер-консультант
 """
+
+
+@dataclass
+class _TokenCache:
+    token: str
+    expires_at: float  # unix timestamp (seconds)
+
+
+_token_cache: Optional[_TokenCache] = None
 
 
 class AIService:
@@ -50,6 +65,12 @@ class AIService:
             templates=self._fmt_templates(templates),
         )
 
+        if settings.GIGACHAT_CREDENTIALS:
+            try:
+                return await self._call_gigachat(system_prompt, user_message)
+            except Exception as exc:
+                logger.warning("GigaChat недоступен (%s), пробуем резервный API", exc)
+
         if settings.AI_API_URL and settings.AI_API_KEY:
             try:
                 return await self._call_api(system_prompt, user_message)
@@ -57,6 +78,55 @@ class AIService:
                 logger.warning("AI API недоступен (%s), используем fallback", exc)
 
         return self._fallback(templates)
+
+    # ------------------------------------------------------------------ GigaChat
+
+    async def _get_gigachat_token(self) -> str:
+        global _token_cache
+        if _token_cache and _token_cache.expires_at > time.time() + 60:
+            return _token_cache.token
+
+        async with httpx.AsyncClient(verify=False, timeout=10.0) as client:
+            resp = await client.post(
+                _GIGACHAT_AUTH_URL,
+                headers={
+                    "Authorization": f"Basic {settings.GIGACHAT_CREDENTIALS}",
+                    "RqUID": str(uuid.uuid4()),
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                data={"scope": settings.GIGACHAT_SCOPE},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        _token_cache = _TokenCache(
+            token=data["access_token"],
+            expires_at=data["expires_at"] / 1000,  # мс → секунды
+        )
+        return _token_cache.token
+
+    async def _call_gigachat(self, system_prompt: str, user_message: str) -> str:
+        token = await self._get_gigachat_token()
+        payload = {
+            "model": settings.GIGACHAT_MODEL,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+        }
+        async with httpx.AsyncClient(verify=False, timeout=30.0) as client:
+            resp = await client.post(
+                _GIGACHAT_CHAT_URL,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"]
+
+    # ------------------------------------------------------------------ Generic OpenAI-compatible API
 
     async def _call_api(self, system_prompt: str, user_message: str) -> str:
         payload = {
@@ -78,6 +148,8 @@ class AIService:
             )
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
+
+    # ------------------------------------------------------------------ helpers
 
     def _fmt_history(self, history: List[UserSession]) -> str:
         if not history:

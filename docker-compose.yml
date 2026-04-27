@@ -8,8 +8,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-wtd_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wtd_user}"]
       interval: 5s
@@ -19,8 +17,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -30,23 +26,10 @@ services:
 
   backend:
     build: .
-    ports:
-      - "8000:8000"
+    env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-wtd_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-wtd_db}
       REDIS_URL: redis://redis:6379
-      SECRET_KEY: ${SECRET_KEY}
-      ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
-      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
-      AI_API_URL: ${AI_API_URL:-}
-      AI_API_KEY: ${AI_API_KEY:-}
-      AI_MODEL: ${AI_MODEL:-}
-      PAYMENT_PHONE: ${PAYMENT_PHONE:-}
-      PAYMENT_TG: ${PAYMENT_TG:-}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@wavestodream.ru}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:5173}
     depends_on:
       db:
         condition: service_healthy
@@ -57,7 +40,7 @@ services:
   frontend:
     build: ../wtd-frontend
     ports:
-      - "80:80"
+      - "8001:80"
     depends_on:
       - backend
     restart: always

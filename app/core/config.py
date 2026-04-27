@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str = "admin@wavestodream.ru"
     ADMIN_PASSWORD: str
 
-    CORS_ORIGINS: str = "http://localhost:5173,https://wavestodream.ru"
+    CORS_ORIGINS: str = "http://localhost:5173,http://wavestodream.pe4en1e.ru"
 
     @property
     def cors_origins_list(self) -> List[str]:

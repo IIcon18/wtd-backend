@@ -3,12 +3,27 @@ import uuid
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
-from app.core.database import AsyncSessionLocal
+import app.core.database as _db
+from app.core.config import settings as _settings
 from app.main import app
 from app.models.user import User, UserRole
 
 BASE_AUTH = "/api/v1/auth"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def patch_db_engine():
+    # NullPool prevents "Future attached to a different loop" errors:
+    # anyio creates a new event loop per test, but a pooled connection is
+    # bound to the loop that created it. NullPool opens/closes each connection
+    # fresh, so there's nothing to re-attach across loop boundaries.
+    _db.engine = create_async_engine(_settings.DATABASE_URL, poolclass=NullPool)
+    _db.AsyncSessionLocal = async_sessionmaker(
+        _db.engine, class_=AsyncSession, expire_on_commit=False
+    )
 
 
 @pytest.fixture
@@ -60,7 +75,7 @@ async def admin_user(http_client):
     assert r.status_code == 201, r.text
     data = r.json()
 
-    async with AsyncSessionLocal() as db:
+    async with _db.AsyncSessionLocal() as db:
         await db.execute(
             update(User).where(User.email == email).values(role=UserRole.admin)
         )

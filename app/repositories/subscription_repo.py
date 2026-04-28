@@ -20,7 +20,7 @@ class SubscriptionRepository:
             select(Subscription)
             .where(
                 Subscription.user_id == user_id,
-                Subscription.is_active == True,
+                Subscription.is_active.is_(True),
                 Subscription.expires_at > now,
             )
             .order_by(Subscription.expires_at.desc())
@@ -46,7 +46,7 @@ class SubscriptionRepository:
         existing = await self.db.execute(
             select(Subscription).where(
                 Subscription.user_id == user_id,
-                Subscription.is_active == True,
+                Subscription.is_active.is_(True),
             )
         )
         for sub in existing.scalars().all():

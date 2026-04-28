@@ -13,7 +13,6 @@ from app.models.payment import PaymentStatus, PaymentTier
 from app.models.subscription import Subscription, SubscriptionTier
 from app.models.user import User
 from app.repositories.payment_repo import PaymentRepository
-from app.repositories.session_repo import SessionRepository
 from app.repositories.swim_profile_repo import SwimProfileRepository
 from app.repositories.user_repo import UserRepository
 from app.schemas.payment import PaymentOut
@@ -59,7 +58,7 @@ async def approve_payment(
         result = await db.execute(
             select(Subscription).where(
                 Subscription.user_id == payment.user_id,
-                Subscription.is_active == True,
+                Subscription.is_active.is_(True),
             )
         )
         for sub in result.scalars().all():

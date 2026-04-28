@@ -29,6 +29,8 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "http://localhost:5173,http://wavestodream.pe4en1e.ru"
 
+    RATE_LIMIT_ENABLED: bool = True
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]

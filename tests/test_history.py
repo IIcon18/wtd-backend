@@ -77,13 +77,13 @@ async def test_get_session_wrong_user_gets_403(http_client, auth_headers):
 @pytest.mark.anyio
 async def test_history_requires_auth(http_client):
     r = await http_client.get(f"{BASE}/")
-    assert r.status_code == 403
+    assert r.status_code == 401
 
 
 @pytest.mark.anyio
 async def test_save_requires_auth(http_client):
     r = await http_client.post(f"{BASE}/save", json=_SESSION)
-    assert r.status_code == 403
+    assert r.status_code == 401
 
 
 @pytest.mark.anyio

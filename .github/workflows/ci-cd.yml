@@ -45,6 +45,7 @@ jobs:
       ADMIN_EMAIL: admin@wavestodream.ru
       ADMIN_PASSWORD: changeme123
       CORS_ORIGINS: http://localhost
+      RATE_LIMIT_ENABLED: false
     steps:
       - uses: actions/checkout@v4
 
@@ -97,6 +98,9 @@ jobs:
         with:
           ref: main
 
+      - name: Set lowercase owner
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -108,8 +112,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/wtd-backend:latest
-            ghcr.io/${{ github.repository_owner }}/wtd-backend:${{ github.sha }}
+            ghcr.io/${{ env.OWNER }}/wtd-backend:latest
+            ghcr.io/${{ env.OWNER }}/wtd-backend:${{ github.sha }}
 
   deploy:
     name: Deploy to VPS

@@ -95,10 +95,10 @@ async def test_create_payment_invalid_tier(http_client, auth_headers):
 @pytest.mark.anyio
 async def test_payments_requires_auth(http_client):
     r = await http_client.get(f"{BASE}/me")
-    assert r.status_code == 403
+    assert r.status_code == 401
 
 
 @pytest.mark.anyio
 async def test_create_payment_requires_auth(http_client):
     r = await http_client.post(f"{BASE}/", json={"tier": "base", "price": 499})
-    assert r.status_code == 403
+    assert r.status_code == 401

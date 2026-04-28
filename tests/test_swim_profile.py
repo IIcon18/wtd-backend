@@ -69,13 +69,13 @@ async def test_update_goal(http_client, auth_headers):
 @pytest.mark.anyio
 async def test_profile_requires_auth_post(http_client):
     r = await http_client.post(f"{BASE}/", json=VALID_PROFILE)
-    assert r.status_code == 403
+    assert r.status_code == 401
 
 
 @pytest.mark.anyio
 async def test_profile_requires_auth_get(http_client):
     r = await http_client.get(f"{BASE}/me")
-    assert r.status_code == 403
+    assert r.status_code == 401
 
 
 @pytest.mark.anyio

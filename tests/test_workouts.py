@@ -9,7 +9,7 @@ BASE_WORKOUTS = "/api/v1/workouts"
 @pytest.mark.anyio
 async def test_get_workouts_requires_auth(http_client):
     r = await http_client.get(f"{BASE_WORKOUTS}/")
-    assert r.status_code == 403
+    assert r.status_code == 401
 
 
 @pytest.mark.anyio

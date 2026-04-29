@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from app.core.config import settings
 from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,8 @@ _WINDOW = 60   # seconds
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        if not settings.RATE_LIMIT_ENABLED:
+            return await call_next(request)
         client_ip = request.client.host if request.client else "unknown"
         key = f"rl:ip:{client_ip}"
         try:

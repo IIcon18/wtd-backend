@@ -16,7 +16,7 @@ async def test_list_pending_requires_admin(http_client, auth_headers):
 @pytest.mark.anyio
 async def test_list_pending_unauthenticated(http_client):
     r = await http_client.get(f"{BASE}/payments/")
-    assert r.status_code == 403
+    assert r.status_code == 401
 
 
 @pytest.mark.anyio

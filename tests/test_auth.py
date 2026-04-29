@@ -145,7 +145,7 @@ async def test_logout_success(http_client, registered_user):
 @pytest.mark.anyio
 async def test_protected_without_token(http_client):
     r = await http_client.get("/api/v1/users/me")
-    assert r.status_code == 403
+    assert r.status_code == 401
 
 
 @pytest.mark.anyio

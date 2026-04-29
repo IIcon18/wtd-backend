@@ -19,7 +19,7 @@ async def test_get_me(http_client, registered_user, auth_headers):
 @pytest.mark.anyio
 async def test_get_me_unauthenticated(http_client):
     r = await http_client.get(f"{BASE}/me")
-    assert r.status_code == 403
+    assert r.status_code == 401
 
 
 @pytest.mark.anyio
@@ -46,4 +46,4 @@ async def test_update_empty_body(http_client, auth_headers):
 @pytest.mark.anyio
 async def test_update_me_unauthenticated(http_client):
     r = await http_client.patch(f"{BASE}/me", json={"name": "X"})
-    assert r.status_code == 403
+    assert r.status_code == 401

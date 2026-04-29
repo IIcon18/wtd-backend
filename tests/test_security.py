@@ -1,5 +1,4 @@
 """Unit tests for app.core.security — no DB or network required."""
-import pytest
 from jose import jwt
 
 from app.core.config import settings

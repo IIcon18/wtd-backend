@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 import app.core.database as _db
+import app.core.redis as _redis_mod
 from app.core.config import settings as _settings
 from app.main import app
 from app.models.user import User, UserRole
@@ -24,6 +25,17 @@ def patch_db_engine():
     _db.AsyncSessionLocal = async_sessionmaker(
         _db.engine, class_=AsyncSession, expire_on_commit=False
     )
+
+
+@pytest.fixture(autouse=True)
+async def _reset_redis():
+    # Reset the Redis singleton so each test gets a fresh client bound to its event loop,
+    # same reason NullPool is used for SQLAlchemy.
+    _redis_mod._redis_client = None
+    yield
+    if _redis_mod._redis_client is not None:
+        await _redis_mod._redis_client.aclose()
+        _redis_mod._redis_client = None
 
 
 @pytest.fixture

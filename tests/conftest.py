@@ -28,14 +28,12 @@ def patch_db_engine():
 
 
 @pytest.fixture(autouse=True)
-async def _reset_redis():
+def _reset_redis():
     # Reset the Redis singleton so each test gets a fresh client bound to its event loop,
     # same reason NullPool is used for SQLAlchemy.
     _redis_mod._redis_client = None
     yield
-    if _redis_mod._redis_client is not None:
-        await _redis_mod._redis_client.aclose()
-        _redis_mod._redis_client = None
+    _redis_mod._redis_client = None
 
 
 @pytest.fixture

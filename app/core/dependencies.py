@@ -55,6 +55,9 @@ async def check_chat_access(
     profile = await profile_repo.get_by_user_id(current_user.id)
 
     if profile and profile.single_workout_available:
+        profile.single_workout_available = False
+        await db.commit()
+        logger.info("Consumed single workout for user_id=%s", current_user.id)
         return current_user
 
     subscription = await sub_repo.get_active_subscription(current_user.id)

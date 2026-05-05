@@ -1,8 +1,32 @@
 """Integration tests for /api/v1/admin endpoints — role-based access."""
 import pytest
 
+import app.core.database as _db
+from app.models.payment import Payment, PaymentStatus, PaymentTier
+
 BASE = "/api/v1/admin"
-PAYMENTS_BASE = "/api/v1/payments"
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+async def _create_pending_payment(user_id: int, tier: str = "base", price: int = 299) -> int:
+    """Insert a pending payment directly into the DB, return its id."""
+    async with _db.AsyncSessionLocal() as db:
+        payment = Payment(
+            user_id=user_id,
+            tier=PaymentTier(tier),
+            price=price,
+            status=PaymentStatus.pending,
+        )
+        db.add(payment)
+        await db.commit()
+        await db.refresh(payment)
+        return payment.id
+
+
+async def _get_user_id(http_client, auth_headers: dict) -> int:
+    r = await http_client.get("/api/v1/users/me", headers=auth_headers)
+    return r.json()["id"]
 
 
 # ── Access control ────────────────────────────────────────────────────────────
@@ -63,32 +87,28 @@ async def test_get_stats_admin(http_client, admin_headers):
 
 @pytest.mark.anyio
 async def test_approve_payment(http_client, admin_headers, auth_headers):
-    r = await http_client.post(
-        f"{PAYMENTS_BASE}/", json={"tier": "base", "price": 499}, headers=auth_headers
-    )
-    payment_id = r.json()["id"]
+    user_id = await _get_user_id(http_client, auth_headers)
+    payment_id = await _create_pending_payment(user_id, "base", 299)
 
-    r2 = await http_client.patch(
+    r = await http_client.patch(
         f"{BASE}/payments/{payment_id}/approve", headers=admin_headers
     )
-    assert r2.status_code == 200
-    data = r2.json()
+    assert r.status_code == 200
+    data = r.json()
     assert data["status"] == "approved"
     assert data["processed_by"] is not None
 
 
 @pytest.mark.anyio
 async def test_decline_payment(http_client, admin_headers, auth_headers):
-    r = await http_client.post(
-        f"{PAYMENTS_BASE}/", json={"tier": "pro", "price": 999}, headers=auth_headers
-    )
-    payment_id = r.json()["id"]
+    user_id = await _get_user_id(http_client, auth_headers)
+    payment_id = await _create_pending_payment(user_id, "pro", 599)
 
-    r2 = await http_client.patch(
+    r = await http_client.patch(
         f"{BASE}/payments/{payment_id}/decline", headers=admin_headers
     )
-    assert r2.status_code == 200
-    assert r2.json()["status"] == "declined"
+    assert r.status_code == 200
+    assert r.json()["status"] == "declined"
 
 
 @pytest.mark.anyio
@@ -110,10 +130,9 @@ async def test_decline_nonexistent_payment(http_client, admin_headers):
 @pytest.mark.anyio
 async def test_approve_grants_subscription(http_client, admin_headers, auth_headers):
     """Approving a 'base' payment must create an active subscription for the user."""
-    r = await http_client.post(
-        f"{PAYMENTS_BASE}/", json={"tier": "base", "price": 499}, headers=auth_headers
-    )
-    payment_id = r.json()["id"]
+    user_id = await _get_user_id(http_client, auth_headers)
+    payment_id = await _create_pending_payment(user_id, "base", 299)
+
     await http_client.patch(
         f"{BASE}/payments/{payment_id}/approve", headers=admin_headers
     )
@@ -138,10 +157,9 @@ async def test_approve_single_grants_single_workout(http_client, admin_headers, 
         },
         headers=auth_headers,
     )
-    r = await http_client.post(
-        f"{PAYMENTS_BASE}/", json={"tier": "single", "price": 199}, headers=auth_headers
-    )
-    payment_id = r.json()["id"]
+    user_id = await _get_user_id(http_client, auth_headers)
+    payment_id = await _create_pending_payment(user_id, "single", 149)
+
     await http_client.patch(
         f"{BASE}/payments/{payment_id}/approve", headers=admin_headers
     )
@@ -153,11 +171,10 @@ async def test_approve_single_grants_single_workout(http_client, admin_headers, 
 @pytest.mark.anyio
 async def test_approve_requires_admin(http_client, auth_headers):
     """Regular user cannot approve payments."""
-    r = await http_client.post(
-        f"{PAYMENTS_BASE}/", json={"tier": "base", "price": 499}, headers=auth_headers
-    )
-    payment_id = r.json()["id"]
-    r2 = await http_client.patch(
+    user_id = await _get_user_id(http_client, auth_headers)
+    payment_id = await _create_pending_payment(user_id, "base", 299)
+
+    r = await http_client.patch(
         f"{BASE}/payments/{payment_id}/approve", headers=auth_headers
     )
-    assert r2.status_code == 403
+    assert r.status_code == 403

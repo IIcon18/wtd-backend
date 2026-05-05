@@ -1,49 +1,51 @@
 """Integration tests for /api/v1/payments endpoints."""
+from unittest.mock import patch
+
 import pytest
 
 BASE = "/api/v1/payments"
 
+# Мок ответа ЮКассы — не делаем реальных запросов в тестах
+MOCK_YK = {
+    "yookassa_id": "yk_test_abc123",
+    "confirmation_url": "https://yookassa.ru/checkout/test",
+    "price": 299,
+}
+
 
 @pytest.mark.anyio
 async def test_create_payment_base_tier(http_client, auth_headers):
-    r = await http_client.post(
-        f"{BASE}/", json={"tier": "base", "price": 499}, headers=auth_headers
-    )
+    with patch("app.api.v1.payments.create_yookassa_payment", return_value=MOCK_YK):
+        r = await http_client.post(
+            f"{BASE}/create", json={"tier": "base"}, headers=auth_headers
+        )
     assert r.status_code == 201
     data = r.json()
-    assert data["tier"] == "base"
-    assert data["status"] == "pending"
-    assert data["price"] == 499
-    assert data["processed_by"] is None
+    assert "payment_id" in data
+    assert "confirmation_url" in data
+    assert data["price"] == 299
 
 
 @pytest.mark.anyio
 async def test_create_payment_pro_tier(http_client, auth_headers):
-    r = await http_client.post(
-        f"{BASE}/", json={"tier": "pro", "price": 999}, headers=auth_headers
-    )
+    mock = {**MOCK_YK, "price": 599}
+    with patch("app.api.v1.payments.create_yookassa_payment", return_value=mock):
+        r = await http_client.post(
+            f"{BASE}/create", json={"tier": "pro"}, headers=auth_headers
+        )
     assert r.status_code == 201
-    assert r.json()["tier"] == "pro"
+    assert r.json()["price"] == 599
 
 
 @pytest.mark.anyio
 async def test_create_payment_single_tier(http_client, auth_headers):
-    r = await http_client.post(
-        f"{BASE}/", json={"tier": "single", "price": 199}, headers=auth_headers
-    )
+    mock = {**MOCK_YK, "price": 149}
+    with patch("app.api.v1.payments.create_yookassa_payment", return_value=mock):
+        r = await http_client.post(
+            f"{BASE}/create", json={"tier": "single"}, headers=auth_headers
+        )
     assert r.status_code == 201
-    assert r.json()["tier"] == "single"
-
-
-@pytest.mark.anyio
-async def test_create_payment_with_screenshot(http_client, auth_headers):
-    r = await http_client.post(
-        f"{BASE}/",
-        json={"tier": "base", "price": 499, "screenshot_file_id": "file_abc123"},
-        headers=auth_headers,
-    )
-    assert r.status_code == 201
-    assert r.json()["screenshot_file_id"] == "file_abc123"
+    assert r.json()["price"] == 149
 
 
 @pytest.mark.anyio
@@ -55,9 +57,10 @@ async def test_get_my_payments_empty(http_client, auth_headers):
 
 @pytest.mark.anyio
 async def test_get_my_payments_after_create(http_client, auth_headers):
-    await http_client.post(
-        f"{BASE}/", json={"tier": "base", "price": 499}, headers=auth_headers
-    )
+    with patch("app.api.v1.payments.create_yookassa_payment", return_value=MOCK_YK):
+        await http_client.post(
+            f"{BASE}/create", json={"tier": "base"}, headers=auth_headers
+        )
     r = await http_client.get(f"{BASE}/me", headers=auth_headers)
     assert r.status_code == 200
     payments = r.json()
@@ -75,9 +78,11 @@ async def test_payments_only_own(http_client, auth_headers):
         json={"email": f"other_{suffix}@test.com", "password": "pass1234", "name": "Other"},
     )
     other_headers = {"Authorization": f"Bearer {r2.json()['access_token']}"}
-    await http_client.post(
-        f"{BASE}/", json={"tier": "pro", "price": 999}, headers=other_headers
-    )
+    mock = {**MOCK_YK, "yookassa_id": f"yk_{suffix}"}
+    with patch("app.api.v1.payments.create_yookassa_payment", return_value=mock):
+        await http_client.post(
+            f"{BASE}/create", json={"tier": "pro"}, headers=other_headers
+        )
 
     r = await http_client.get(f"{BASE}/me", headers=auth_headers)
     for p in r.json():
@@ -87,7 +92,7 @@ async def test_payments_only_own(http_client, auth_headers):
 @pytest.mark.anyio
 async def test_create_payment_invalid_tier(http_client, auth_headers):
     r = await http_client.post(
-        f"{BASE}/", json={"tier": "gold", "price": 100}, headers=auth_headers
+        f"{BASE}/create", json={"tier": "gold"}, headers=auth_headers
     )
     assert r.status_code == 422
 
@@ -100,5 +105,5 @@ async def test_payments_requires_auth(http_client):
 
 @pytest.mark.anyio
 async def test_create_payment_requires_auth(http_client):
-    r = await http_client.post(f"{BASE}/", json={"tier": "base", "price": 499})
+    r = await http_client.post(f"{BASE}/create", json={"tier": "base"})
     assert r.status_code == 401

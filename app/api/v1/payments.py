@@ -14,7 +14,6 @@ from app.models.payment import PaymentStatus, PaymentTier
 from app.models.subscription import Subscription, SubscriptionTier
 from app.models.user import User
 from app.repositories.payment_repo import PaymentRepository
-from app.repositories.subscription_repo import SubscriptionRepository
 from app.repositories.swim_profile_repo import SwimProfileRepository
 from app.schemas.payment import PaymentOut
 from app.services.yookassa_service import (

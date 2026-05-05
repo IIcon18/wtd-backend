@@ -18,6 +18,12 @@ class PaymentRepository:
         result = await self.db.execute(select(Payment).where(Payment.id == payment_id))
         return result.scalar_one_or_none()
 
+    async def get_by_yookassa_id(self, yookassa_payment_id: str) -> Optional[Payment]:
+        result = await self.db.execute(
+            select(Payment).where(Payment.yookassa_payment_id == yookassa_payment_id)
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_user_id(self, user_id: int) -> List[Payment]:
         result = await self.db.execute(
             select(Payment).where(Payment.user_id == user_id)
@@ -40,12 +46,14 @@ class PaymentRepository:
         tier: PaymentTier,
         price: int,
         screenshot_file_id: Optional[str] = None,
+        yookassa_payment_id: Optional[str] = None,
     ) -> Payment:
         payment = Payment(
             user_id=user_id,
             tier=tier,
             price=price,
             screenshot_file_id=screenshot_file_id,
+            yookassa_payment_id=yookassa_payment_id,
         )
         self.db.add(payment)
         await self.db.commit()

@@ -18,6 +18,7 @@ class PaymentOut(BaseModel):
     tier: PaymentTier
     price: int
     screenshot_file_id: Optional[str]
+    yookassa_payment_id: Optional[str]
     status: PaymentStatus
     processed_by: Optional[int]
     created_at: datetime

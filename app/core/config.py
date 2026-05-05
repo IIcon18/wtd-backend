@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     PAYMENT_PHONE: str = ""
     PAYMENT_TG: str = ""
 
+    YOOKASSA_SHOP_ID: str = ""
+    YOOKASSA_SECRET_KEY: str = ""
+    FRONTEND_URL: str = "http://localhost:5173"
+
     ADMIN_EMAIL: str = "admin@wavestodream.ru"
     ADMIN_PASSWORD: str
 

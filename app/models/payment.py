@@ -37,6 +37,9 @@ class Payment(Base):
     screenshot_file_id: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True
     )
+    yookassa_payment_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, unique=True, index=True
+    )
     status: Mapped[PaymentStatus] = mapped_column(
         Enum(PaymentStatus, name="paymentstatus"),
         nullable=False,

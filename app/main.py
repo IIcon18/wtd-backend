@@ -15,9 +15,40 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def _ensure_admin() -> None:
+    """Создаёт admin-пользователя из .env если его ещё нет в базе."""
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.core.security import hash_password
+    from app.models.user import User, UserRole
+    from app.repositories.user_repo import UserRepository
+
+    async with AsyncSessionLocal() as db:
+        repo = UserRepository(db)
+        existing = await repo.get_by_email(settings.ADMIN_EMAIL)
+        if existing:
+            # Убедимся что роль admin
+            if existing.role != UserRole.admin:
+                existing.role = UserRole.admin
+                await db.commit()
+                logger.info("Updated role to admin for %s", settings.ADMIN_EMAIL)
+            return
+
+        admin = User(
+            email=settings.ADMIN_EMAIL,
+            hashed_password=hash_password(settings.ADMIN_PASSWORD),
+            name="Администратор",
+            role=UserRole.admin,
+        )
+        db.add(admin)
+        await db.commit()
+        logger.info("Created admin user: %s", settings.ADMIN_EMAIL)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("WavesToDream API starting up")
+    await _ensure_admin()
     yield
     await close_redis()
     logger.info("WavesToDream API shut down")

@@ -1,8 +1,9 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,14 +14,32 @@ from app.models.payment import PaymentStatus, PaymentTier
 from app.models.subscription import Subscription, SubscriptionTier
 from app.models.user import User
 from app.repositories.payment_repo import PaymentRepository
+from app.repositories.subscription_repo import SubscriptionRepository
 from app.repositories.swim_profile_repo import SwimProfileRepository
 from app.repositories.user_repo import UserRepository
 from app.schemas.payment import PaymentOut
+from app.schemas.subscription import SubscriptionOut
 from app.schemas.user import UserOut
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+
+# ── Schemas ───────────────────────────────────────────────────────────────────
+
+class UserWithSubscription(BaseModel):
+    user: UserOut
+    subscription: Optional[SubscriptionOut] = None
+
+    model_config = {"from_attributes": True}
+
+
+class GrantSubscriptionRequest(BaseModel):
+    tier: SubscriptionTier
+    days: int = 30  # сколько дней выдать
+
+
+# ── Payments ──────────────────────────────────────────────────────────────────
 
 @router.get("/payments/", response_model=List[PaymentOut])
 async def list_pending_payments(
@@ -28,6 +47,14 @@ async def list_pending_payments(
     db: AsyncSession = Depends(get_db),
 ):
     return await PaymentRepository(db).get_pending()
+
+
+@router.get("/payments/all", response_model=List[PaymentOut])
+async def list_all_payments(
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    return await PaymentRepository(db).get_all()
 
 
 @router.patch("/payments/{payment_id}/approve", response_model=PaymentOut)
@@ -40,7 +67,6 @@ async def approve_payment(
     if not payment:
         raise NotFoundError("Платёж не найден")
 
-    # Stage all side-effects before the single commit so they're atomic.
     payment.status = PaymentStatus.approved
     payment.processed_by = admin.id
     payment.updated_at = datetime.now(timezone.utc)
@@ -54,7 +80,6 @@ async def approve_payment(
         tier = SubscriptionTier(payment.tier.value)
         now = datetime.now(timezone.utc)
 
-        # Deactivate existing active subscriptions
         result = await db.execute(
             select(Subscription).where(
                 Subscription.user_id == payment.user_id,
@@ -93,13 +118,79 @@ async def decline_payment(
     )
 
 
-@router.get("/users/", response_model=List[UserOut])
+# ── Users ─────────────────────────────────────────────────────────────────────
+
+@router.get("/users/", response_model=List[UserWithSubscription])
 async def list_users(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    return await UserRepository(db).get_all()
+    """Список всех пользователей с их активной подпиской."""
+    users = await UserRepository(db).get_all()
+    sub_repo = SubscriptionRepository(db)
 
+    result = []
+    for user in users:
+        sub = await sub_repo.get_active_subscription(user.id)
+        result.append(UserWithSubscription(
+            user=UserOut.model_validate(user),
+            subscription=SubscriptionOut.model_validate(sub) if sub else None,
+        ))
+    return result
+
+
+@router.post("/users/{user_id}/subscription", response_model=SubscriptionOut)
+async def grant_subscription(
+    user_id: int,
+    data: GrantSubscriptionRequest,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Выдать или продлить подписку пользователю."""
+    user = await UserRepository(db).get_by_id(user_id)
+    if not user:
+        raise NotFoundError("Пользователь не найден")
+
+    now = datetime.now(timezone.utc)
+    sub = await SubscriptionRepository(db).create_or_update(
+        user_id=user_id,
+        tier=data.tier,
+        started_at=now,
+        expires_at=now + timedelta(days=data.days),
+    )
+    logger.info(
+        "Admin id=%s granted %s subscription (%d days) to user_id=%s",
+        admin.id, data.tier.value, data.days, user_id,
+    )
+    return sub
+
+
+@router.delete("/users/{user_id}/subscription", status_code=204)
+async def revoke_subscription(
+    user_id: int,
+    admin: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Отозвать активную подписку пользователя."""
+    user = await UserRepository(db).get_by_id(user_id)
+    if not user:
+        raise NotFoundError("Пользователь не найден")
+
+    result = await db.execute(
+        select(Subscription).where(
+            Subscription.user_id == user_id,
+            Subscription.is_active.is_(True),
+        )
+    )
+    subs = result.scalars().all()
+    for sub in subs:
+        sub.is_active = False
+
+    await db.commit()
+    logger.info("Admin id=%s revoked subscription for user_id=%s", admin.id, user_id)
+
+
+# ── Stats ─────────────────────────────────────────────────────────────────────
 
 @router.get("/stats/", response_model=Dict[str, Any])
 async def get_stats(

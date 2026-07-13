@@ -114,20 +114,3 @@ jobs:
           tags: |
             ghcr.io/${{ env.OWNER }}/wtd-backend:latest
             ghcr.io/${{ env.OWNER }}/wtd-backend:${{ github.sha }}
-
-  deploy:
-    name: Deploy to VPS
-    runs-on: ubuntu-latest
-    needs: [docker-build]
-    steps:
-      - uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            cd ${{ secrets.DEPLOY_PATH }}
-            docker compose -f docker-compose.prod.yml pull backend
-            docker compose -f docker-compose.prod.yml up -d --no-deps backend
-            docker image prune -f

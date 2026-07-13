@@ -1,21 +1,25 @@
 """Integration tests for /api/v1/payments endpoints."""
+import uuid
 from unittest.mock import patch
 
 import pytest
 
 BASE = "/api/v1/payments"
 
-# Мок ответа ЮКассы — не делаем реальных запросов в тестах
-MOCK_YK = {
-    "yookassa_id": "yk_test_abc123",
-    "confirmation_url": "https://yookassa.ru/checkout/test",
-    "price": 299,
-}
+
+def _mock_yk(price: int) -> dict:
+    """Fresh yookassa_id per call — the DB has a unique constraint on it and
+    tests share one database with no per-test transaction rollback."""
+    return {
+        "yookassa_id": f"yk_test_{uuid.uuid4().hex[:8]}",
+        "confirmation_url": "https://yookassa.ru/checkout/test",
+        "price": price,
+    }
 
 
 @pytest.mark.anyio
 async def test_create_payment_base_tier(http_client, auth_headers):
-    with patch("app.api.v1.payments.create_yookassa_payment", return_value=MOCK_YK):
+    with patch("app.api.v1.payments.create_yookassa_payment", return_value=_mock_yk(299)):
         r = await http_client.post(
             f"{BASE}/create", json={"tier": "base"}, headers=auth_headers
         )
@@ -28,8 +32,7 @@ async def test_create_payment_base_tier(http_client, auth_headers):
 
 @pytest.mark.anyio
 async def test_create_payment_pro_tier(http_client, auth_headers):
-    mock = {**MOCK_YK, "price": 599}
-    with patch("app.api.v1.payments.create_yookassa_payment", return_value=mock):
+    with patch("app.api.v1.payments.create_yookassa_payment", return_value=_mock_yk(599)):
         r = await http_client.post(
             f"{BASE}/create", json={"tier": "pro"}, headers=auth_headers
         )
@@ -39,8 +42,7 @@ async def test_create_payment_pro_tier(http_client, auth_headers):
 
 @pytest.mark.anyio
 async def test_create_payment_single_tier(http_client, auth_headers):
-    mock = {**MOCK_YK, "price": 149}
-    with patch("app.api.v1.payments.create_yookassa_payment", return_value=mock):
+    with patch("app.api.v1.payments.create_yookassa_payment", return_value=_mock_yk(149)):
         r = await http_client.post(
             f"{BASE}/create", json={"tier": "single"}, headers=auth_headers
         )
@@ -57,7 +59,7 @@ async def test_get_my_payments_empty(http_client, auth_headers):
 
 @pytest.mark.anyio
 async def test_get_my_payments_after_create(http_client, auth_headers):
-    with patch("app.api.v1.payments.create_yookassa_payment", return_value=MOCK_YK):
+    with patch("app.api.v1.payments.create_yookassa_payment", return_value=_mock_yk(299)):
         await http_client.post(
             f"{BASE}/create", json={"tier": "base"}, headers=auth_headers
         )
@@ -78,8 +80,7 @@ async def test_payments_only_own(http_client, auth_headers):
         json={"email": f"other_{suffix}@test.com", "password": "pass1234", "name": "Other"},
     )
     other_headers = {"Authorization": f"Bearer {r2.json()['access_token']}"}
-    mock = {**MOCK_YK, "yookassa_id": f"yk_{suffix}"}
-    with patch("app.api.v1.payments.create_yookassa_payment", return_value=mock):
+    with patch("app.api.v1.payments.create_yookassa_payment", return_value=_mock_yk(599)):
         await http_client.post(
             f"{BASE}/create", json={"tier": "pro"}, headers=other_headers
         )
